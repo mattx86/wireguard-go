@@ -13,6 +13,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"compress/flate"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/net/ipv4"
@@ -436,6 +437,24 @@ func calculatePaddingSize(packetSize, mtu int) int {
 	return paddedSize - lastUnit
 }
 
+// Function to compress data using DEFLATE
+func compress(data []byte) ([]byte, error) {
+    var buf bytes.Buffer
+    writer, err := flate.NewWriter(&buf, flate.BestCompression)
+    if err != nil {
+        return nil, err
+    }
+    _, err = writer.Write(data)
+    if err != nil {
+        return nil, err
+    }
+    err = writer.Close()
+    if err != nil {
+        return nil, err
+    }
+    return buf.Bytes(), nil
+}
+
 /* Encrypts the elements in the queue
  * and marks them for sequential consumption (by releasing the mutex)
  *
@@ -461,12 +480,20 @@ func (device *Device) RoutineEncryption(id int) {
 			binary.LittleEndian.PutUint32(fieldReceiver, elem.keypair.remoteIndex)
 			binary.LittleEndian.PutUint64(fieldNonce, elem.nonce)
 
+			// compress packet payload
+			if (len(elem.packet) > 0) {
+				IPHeaderLen := int((elem.packet[0] & 0x0F) * 4)
+				IPHeader := elem.packet[:IPHeaderLen]
+				CompressedPayload, _ := compress(elem.packet[IPHeaderLen:])
+				elem.packet = IPHeader
+				elem.packet = append(elem.packet, CompressedPayload...)
+			}
+
 			// pad content to multiple of 16
 			paddingSize := calculatePaddingSize(len(elem.packet), int(device.tun.mtu.Load()))
 			elem.packet = append(elem.packet, paddingZeros[:paddingSize]...)
 
 			// encrypt content and release to consumer
-
 			binary.LittleEndian.PutUint64(nonce[4:], elem.nonce)
 			elem.packet = elem.keypair.send.Seal(
 				header,

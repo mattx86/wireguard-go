@@ -12,6 +12,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"compress/flate"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/net/ipv4"
@@ -236,6 +237,19 @@ func (device *Device) RoutineReceiveIncoming(maxBatchSize int, recv conn.Receive
 	}
 }
 
+// Function to decompress data using DEFLATE
+func decompress(data []byte) ([]byte, error) {
+    reader := flate.NewReader(bytes.NewReader(data))
+    defer reader.Close()
+
+    var buf bytes.Buffer
+    _, err := buf.ReadFrom(reader)
+    if err != nil {
+        return nil, err
+    }
+    return buf.Bytes(), nil
+}
+
 func (device *Device) RoutineDecryption(id int) {
 	var nonce [chacha20poly1305.NonceSize]byte
 
@@ -261,6 +275,15 @@ func (device *Device) RoutineDecryption(id int) {
 			)
 			if err != nil {
 				elem.packet = nil
+			} else {
+				// decompress packet payload
+				if (len(elem.packet) > 0) {
+					IPHeaderLen := int((elem.packet[0] & 0x0F) * 4)
+					IPHeader := elem.packet[:IPHeaderLen]
+					DecompressedPayload, _ := decompress(elem.packet[IPHeaderLen:])
+					elem.packet = IPHeader
+					elem.packet = append(elem.packet, DecompressedPayload...)
+				}
 			}
 		}
 		elemsContainer.Unlock()
