@@ -13,6 +13,9 @@ import (
 	"sync"
 	"time"
 	"compress/flate"
+	//"fmt"
+	//"encoding/hex"
+	//"crypto/sha256"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/net/ipv4"
@@ -276,13 +279,28 @@ func (device *Device) RoutineDecryption(id int) {
 			if err != nil {
 				elem.packet = nil
 			} else {
-				// decompress packet payload
 				if (len(elem.packet) > 0) {
-					IPHeaderLen := int((elem.packet[0] & 0x0F) * 4)
-					IPHeader := elem.packet[:IPHeaderLen]
-					DecompressedPayload, _ := decompress(elem.packet[IPHeaderLen:])
-					elem.packet = IPHeader
-					elem.packet = append(elem.packet, DecompressedPayload...)
+					if (elem.packet[0] == byte('1')) {
+						// Packet is compressed.  Decompress it.
+						elem.packet, _ = decompress(elem.packet[1:])
+						packetLength := binary.BigEndian.Uint16(elem.packet[2:4])
+						elem.packet = elem.packet[:packetLength]
+
+						// Print Packet SHA256
+						//hash := sha256.Sum256(elem.packet)
+						//fmt.Printf("Received decompressed SHA256 = %x\n", hash)
+						//fmt.Printf("%s\n", hex.Dump(elem.packet))
+					} else {
+						// Packet is uncompressed.
+						elem.packet = elem.packet[1:]
+						packetLength := binary.BigEndian.Uint16(elem.packet[2:4])
+						elem.packet = elem.packet[:packetLength]
+
+						// Print Packet SHA256
+						//hash := sha256.Sum256(elem.packet)
+						//fmt.Printf("Received uncompressed SHA256 = %x\n", hash)
+						//fmt.Printf("%s\n", hex.Dump(elem.packet))
+					}
 				}
 			}
 		}
@@ -534,7 +552,8 @@ func (peer *Peer) RoutineSequentialReceiver(maxBatchSize int) {
 				continue
 			}
 
-			bufs = append(bufs, elem.buffer[:MessageTransportOffsetContent+len(elem.packet)])
+			//bufs = append(bufs, elem.buffer[:MessageTransportOffsetContent+len(elem.packet)])
+			bufs = append(bufs, append(elem.buffer[:MessageTransportOffsetContent], elem.packet...))
 		}
 
 		peer.rxBytes.Add(rxBytesLen)

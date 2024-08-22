@@ -14,6 +14,9 @@ import (
 	"sync"
 	"time"
 	"compress/flate"
+	//"fmt"
+	//"encoding/hex"
+	//"crypto/sha256"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/net/ipv4"
@@ -480,13 +483,24 @@ func (device *Device) RoutineEncryption(id int) {
 			binary.LittleEndian.PutUint32(fieldReceiver, elem.keypair.remoteIndex)
 			binary.LittleEndian.PutUint64(fieldNonce, elem.nonce)
 
-			// compress packet payload
 			if (len(elem.packet) > 0) {
-				IPHeaderLen := int((elem.packet[0] & 0x0F) * 4)
-				IPHeader := elem.packet[:IPHeaderLen]
-				CompressedPayload, _ := compress(elem.packet[IPHeaderLen:])
-				elem.packet = IPHeader
-				elem.packet = append(elem.packet, CompressedPayload...)
+				// Compress packet.
+				compressed, _ := compress(elem.packet)
+				compressedFlag := []byte{'1'}
+				uncompressedFlag := []byte{'0'}
+				if (len(compressed) < len(elem.packet)) {
+					// Use the smaller compressed packet.
+					//hash := sha256.Sum256(elem.packet)
+					//fmt.Printf("Sent compressed SHA256 = %x\n", hash)
+					//fmt.Printf("%s\n", hex.Dump(elem.packet))
+					elem.packet = append(compressedFlag, compressed...)
+				} else {
+					// Use the smaller uncompressed packet.
+					//hash := sha256.Sum256(elem.packet)
+					//fmt.Printf("Sent uncompressed SHA256 = %x\n", hash)
+					//fmt.Printf("%s\n", hex.Dump(elem.packet))
+					elem.packet = append(uncompressedFlag, elem.packet...)
+				}
 			}
 
 			// pad content to multiple of 16
